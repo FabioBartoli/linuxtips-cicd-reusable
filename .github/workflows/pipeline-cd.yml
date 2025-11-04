@@ -24,7 +24,7 @@ on:
         required: true
       COSIGN_PASSWORD:
         description: "Senha da cosign.key"
-        required: 
+        required: true
         
 permissions:
   id-token: write
