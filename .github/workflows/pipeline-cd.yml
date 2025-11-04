@@ -98,7 +98,7 @@ jobs:
           image: ${{ steps.compile.outputs.full_image }}
 
       - name: Deploy to Amazon ECS
-        if: ${{ steps.verify-signature.outcome = 'success' }}
+        if: ${{ steps.verify-signature.outcome == 'success' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: task-definition.json
