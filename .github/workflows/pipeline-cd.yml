@@ -61,7 +61,6 @@ jobs:
           echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
 
       - name: "Install Cosign"
-        if: ${{ steps.trivy.outcome == 'success' && steps.push-ecr.outcome == 'success' }}
         uses: sigstore/cosign-installer@v3.4.0
 
       - name: Prepare Cosign public key
@@ -72,6 +71,7 @@ jobs:
           echo "COSIGN_PUB_PATH=$PUB_PATH" >> "$GITHUB_ENV"
 
       - name: Cosign - Verify signature
+        id: verify-signature
         run: |
           cosign version
           cosign verify --key "${COSIGN_PUB_PATH}" "${{ steps.compile.outputs.full_image }}"
@@ -98,6 +98,7 @@ jobs:
           image: ${{ steps.compile.outputs.full_image }}
 
       - name: Deploy to Amazon ECS
+        if: ${{ steps.verify-signature.outcome = 'success' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: task-definition.json
