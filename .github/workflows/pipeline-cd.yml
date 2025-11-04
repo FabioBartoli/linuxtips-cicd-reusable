@@ -101,7 +101,7 @@ jobs:
         if: ${{ steps.verify-signature.outcome == 'success' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: task-definition.json
+          task-definition: ${{ steps.render.outputs.task-definition }}
           service: ${{ vars.SERVICE_NAME }}
           cluster: ${{ vars.CLUSTER_NAME }}
           wait-for-service-stability: true
