@@ -78,7 +78,7 @@ jobs:
 
       - name: Get Task Definition
         run: |
-          aws ecs describe-task-definition --task-definition ${{ vars.APPLICATION_NAME }} --query taskDefinition > task-definition.json
+          aws ecs describe-task-definition --task-definition ${{ vars.TASK_NAME }} --query taskDefinition > task-definition.json
           echo $(cat task-definition.json | jq 'del(
                   .taskDefinitionArn,
                   .requiresAttributes,
