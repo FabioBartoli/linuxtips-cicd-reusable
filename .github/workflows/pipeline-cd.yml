@@ -130,7 +130,7 @@ jobs:
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           FULL_IMAGE="$( echo "${REGISTRY}/${{ vars.IMAGE_NAME }}:${{ github.sha }}" | tr '[:upper:]' '[:lower:]' )"
           echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
-          
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.4.0
 
@@ -176,7 +176,7 @@ jobs:
 
       - name: Pre-Deploy - Image
         run: |
-          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; echo
+          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}' 2>/dev/null || true echo
 
       - name: Apply set-image (rollout)
         if: ${{ steps.verify-signature.outcome == 'success' }}
@@ -193,4 +193,4 @@ jobs:
       - name: Pos-Deploy - Image
         if: ${{ steps.verify-signature.outcome == 'success' }}
         run: |
-          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; echo
+          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; 2>/dev/null || true echo
