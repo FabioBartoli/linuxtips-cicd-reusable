@@ -157,40 +157,36 @@ jobs:
           aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
           kubectl version --client=true
 
-      - name: Definir nomes
-        id: names
-        shell: bash
+      - name: Render Kubernetes manifests
+        if: ${{ steps.verify-signature.outcome == 'success' }}
+        env:
+          IMAGE: ${{ steps.compile.outputs.full_image }}
+          NAMESPACE: ${{ vars.K8S_NAMESPACE }}
         run: |
-          DEPLOY="${{ vars.CONTAINER_NAME }}"
-          NS="${{ vars.K8S_NAMESPACE }}"
-          CN="${{ vars.CONTAINER_NAME }}"
-          if [[ -z "$CN" ]]; then
-            CN="${{ vars.SERVICE_NAME }}"
-          fi
-          echo "deploy=$DEPLOY" >> "$GITHUB_OUTPUT"
-          echo "namespace=$NS" >> "$GITHUB_OUTPUT"
-          echo "container=$CN" >> "$GITHUB_OUTPUT"
-          echo "Deployment: $DEPLOY"
-          echo "Namespace:  $NS"
-          echo "Container:  $CN"
+          mkdir -p k8s-rendered
+          for f in k8s/*.yaml; do
+            echo "Renderizando ${f} -> k8s-rendered/$(basename "$f")"
+            envsubst '$IMAGE $NAMESPACE' < "$f" > "k8s-rendered/$(basename "$f")"
+          done
+          echo "=== Preview do deployment renderizado ==="
+          sed -n '1,120p' k8s-rendered/deployment.yaml || true
 
-      - name: Pre-Deploy - Image
-        run: |
-          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}' 2>/dev/null || true echo
-
-      - name: Apply set-image (rollout)
+      - name: Apply Kubernetes manifests
         if: ${{ steps.verify-signature.outcome == 'success' }}
         run: |
-          kubectl -n "${{ steps.names.outputs.namespace }}" set image deployment/"${{ steps.names.outputs.deploy }}" \
-            "${{ steps.names.outputs.container }}"="${{ steps.compile.outputs.full_image }}" --record
+          kubectl apply -f k8s-rendered
 
       - name: Wait rollout
         if: ${{ steps.verify-signature.outcome == 'success' }}
         run: |
           set -e
-          kubectl -n "${{ steps.names.outputs.namespace }}" rollout status deployment/"${{ steps.names.outputs.deploy }}" --timeout=5m
+          DEPLOY=$(kubectl get deploy -n "${{ vars.K8S_NAMESPACE }}" -o name | head -n1)
+          echo "Aguardando rollout de: $DEPLOY"
+          kubectl -n "${{ vars.K8S_NAMESPACE }}" rollout status "$DEPLOY" --timeout=5m
 
-      - name: Pos-Deploy - Image
+      - name: Check deployment image
         if: ${{ steps.verify-signature.outcome == 'success' }}
         run: |
-          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; 2>/dev/null || true echo
+          echo "Imagem em execução:"
+          kubectl -n "${{ vars.K8S_NAMESPACE }}" get deploy -o jsonpath='{.items[*].spec.template.spec.containers[*].image}' || true
+          echo
