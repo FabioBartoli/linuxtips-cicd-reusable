@@ -105,3 +105,85 @@ jobs:
           service: ${{ vars.SERVICE_NAME }}
           cluster: ${{ vars.CLUSTER_NAME }}
           wait-for-service-stability: true
+
+  eks-deploy:
+    if: ${{ inputs.deploy-type == 'eks-kubectl' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.4.0
+
+      - name: Prepare Cosign public key
+        run: |
+          PUB_PATH="${{ env.WORKDIR }}/cosign.pub"
+          echo "${{ secrets.COSIGN_KEY_PUB }}" | base64 -d > "$PUB_PATH"
+          chmod 644 "$PUB_PATH"
+          echo "COSIGN_PUB_PATH=$PUB_PATH" >> "$GITHUB_ENV"
+
+      - name: Cosign - Verify signature (ignore tlog for key mode)
+        id: verify-signature
+        run: |
+          cosign version
+          cosign verify --key "${COSIGN_PUB_PATH}" --insecure-ignore-tlog "${{ steps.compile.outputs.full_image }}"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        run: |
+          aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
+          kubectl version --client=true
+
+      - name: Definir nomes
+        id: names
+        shell: bash
+        run: |
+          DEPLOY="${{ vars.CONTAINER_NAME }}"
+          NS="${{ vars.K8S_NAMESPACE }}"
+          CN="${{ vars.CONTAINER_NAME }}"
+          if [[ -z "$CN" ]]; then
+            CN="${{ vars.SERVICE_NAME }}"
+          fi
+          echo "deploy=$DEPLOY" >> "$GITHUB_OUTPUT"
+          echo "namespace=$NS" >> "$GITHUB_OUTPUT"
+          echo "container=$CN" >> "$GITHUB_OUTPUT"
+          echo "Deployment: $DEPLOY"
+          echo "Namespace:  $NS"
+          echo "Container:  $CN"
+
+      - name: Pre-Deploy - Image
+        run: |
+          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; echo
+
+      - name: Apply set-image (rollout)
+        if: ${{ steps.verify-signature.outcome == 'success' }}
+        run: |
+          kubectl -n "${{ steps.names.outputs.namespace }}" set image deployment/"${{ steps.names.outputs.deploy }}" \
+            "${{ steps.names.outputs.container }}"="${{ steps.compile.outputs.full_image }}" --record
+
+      - name: Wait rollout
+        if: ${{ steps.verify-signature.outcome == 'success' }}
+        run: |
+          set -e
+          kubectl -n "${{ steps.names.outputs.namespace }}" rollout status deployment/"${{ steps.names.outputs.deploy }}" --timeout=5m
+
+      - name: Pos-Deploy - Image
+        if: ${{ steps.verify-signature.outcome == 'success' }}
+        run: |
+          kubectl -n "${{ steps.names.outputs.namespace }}" get deploy "${{ steps.names.outputs.deploy }}" -o jsonpath='{.spec.template.spec.containers[*].image}'; echo
