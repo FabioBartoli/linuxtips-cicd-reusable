@@ -174,7 +174,7 @@ jobs:
       - name: Apply Kubernetes manifests
         if: ${{ steps.verify-signature.outcome == 'success' }}
         run: |
-          kubectl apply -f k8s-rendered --validate=false
+          kubectl apply -f k8s-rendered
 
       - name: Wait rollout
         if: ${{ steps.verify-signature.outcome == 'success' }}
