@@ -37,6 +37,8 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    outputs:
+      full_image: ${{ steps.compile.outputs.full_image }}
 
     steps:
       - name: "Checkout"
@@ -91,7 +93,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Get Task Definition
-
         run: |
           aws ecs describe-task-definition --task-definition ${{ vars.TASK_NAME }} --query taskDefinition > task-definition.json
           echo $(cat task-definition.json | jq 'del(
@@ -106,16 +107,14 @@ jobs:
 
       - name: Render Task Definition
         id: render
-        env:
-          FULL_IMAGE: ${{ needs.prepare.outputs.full_image }}
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
           container-name: ${{ vars.CONTAINER_NAME }}
-          image: ${FULL_IMAGE}
+          image: ${{ needs.prepare.outputs.full_image }}
 
       - name: Deploy to Amazon ECS
-        if: ${{ steps.verify-signature.outcome == 'success' }}
+        if: ${{ needs.prepare.result == 'success' }}
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
@@ -149,7 +148,7 @@ jobs:
           kubectl version --client=true
 
       - name: Render Kubernetes manifests
-        if: ${{ steps.verify-signature.outcome == 'success' }}
+        if: ${{ needs.prepare.result == 'success' }}
         env:
           IMAGE: ${{ needs.prepare.outputs.full_image }}
           NAMESPACE: ${{ vars.K8S_NAMESPACE }}
@@ -163,12 +162,12 @@ jobs:
           sed -n '1,120p' k8s-rendered/deployment.yaml || true
 
       - name: Apply Kubernetes manifests
-        if: ${{ steps.verify-signature.outcome == 'success' }}
+        if: ${{ needs.prepare.result == 'success' }}
         run: |
           kubectl apply -f k8s-rendered
 
       - name: Wait rollout
-        if: ${{ steps.verify-signature.outcome == 'success' }}
+        if: ${{ needs.prepare.result == 'success' }}
         run: |
           set -e
           DEPLOY=$(kubectl get deploy -n "${{ vars.K8S_NAMESPACE }}" -o name | head -n1)
@@ -176,7 +175,7 @@ jobs:
           kubectl -n "${{ vars.K8S_NAMESPACE }}" rollout status "$DEPLOY" --timeout=5m
 
       - name: Check deployment image
-        if: ${{ steps.verify-signature.outcome == 'success' }}
+        if: ${{ needs.prepare.result == 'success' }}
         run: |
           echo "Imagem em execução:"
           kubectl -n "${{ vars.K8S_NAMESPACE }}" get deploy -o jsonpath='{.items[*].spec.template.spec.containers[*].image}' || true
@@ -221,7 +220,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add "$VALUES_FILE"
-          git commit -m "ci: Atualizada a image para ${{ needs.prepare-image.outputs.full_image }}" || echo "Nada para commitar"
+          git commit -m "ci: Atualizada a image para ${{ needs.prepare.outputs.full_image }}" || echo "Nada para commitar"
 
           git branch
           git rev-parse --abbrev-ref HEAD
