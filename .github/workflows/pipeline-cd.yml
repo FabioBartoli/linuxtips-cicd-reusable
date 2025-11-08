@@ -28,7 +28,7 @@ on:
         
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   WORKDIR: ${{ inputs.working-directory }}
@@ -186,10 +186,6 @@ jobs:
     needs: prepare
     if: ${{ inputs.deploy-type == 'eks-argocd' && needs.prepare.result == 'success'}}
     runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: write
 
     env:
       VALUES_FILE: manifests/values.yaml
